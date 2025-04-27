@@ -29,26 +29,12 @@ const GUILD_ID = '1076638219858346126';
 bot.once('ready', async () => {
   try {
     await bot.application.commands.set([]);
-    console.log('Toutes les commandes globales ont été supprimées.');
+    console.log('✅ Toutes les commandes globales ont été supprimées.');
   } catch (error) {
-    console.error('Erreur lors du nettoyage des commandes globales:', error);
+    console.error('❌ Erreur lors du nettoyage des commandes globales:', error);
   }
 
-  console.log(`Connecté en tant que ${bot.user.tag}`);
-
-  try {
-    await bot.user.setUsername('BurgerShot Recrutement');
-    console.log('Nom du bot changé !');
-  } catch (error) {
-    console.error('Erreur lors du changement de nom:', error);
-  }
-
-  try {
-    await bot.user.setAvatar('./PP.png');
-    console.log('Image du bot changée !');
-  } catch (error) {
-    console.error('Erreur lors du changement d\'avatar:', error);
-  }
+  console.log(`🤖 Connecté en tant que ${bot.user.tag}`);
 
   await registerCommands();
 });
@@ -59,7 +45,7 @@ async function registerCommands() {
     const guild = await bot.guilds.fetch(GUILD_ID);
 
     if (!guild) {
-      console.error("Serveur introuvable !");
+      console.error("❌ Serveur introuvable !");
       return;
     }
 
@@ -70,9 +56,9 @@ async function registerCommands() {
       }
     ]);
 
-    console.log('Commande /recrutement enregistrée sur le serveur.');
+    console.log('✅ Commande /recrutement enregistrée sur le serveur.');
   } catch (error) {
-    console.error('Erreur lors de l\'enregistrement des commandes:', error);
+    console.error('❌ Erreur lors de l\'enregistrement des commandes:', error);
   }
 }
 
@@ -89,7 +75,7 @@ bot.on('interactionCreate', async interaction => {
       await handleButton(interaction);
     }
   } catch (error) {
-    console.error('Erreur dans le gestionnaire d\'interaction:', error);
+    console.error('❌ Erreur dans le gestionnaire d\'interaction:', error);
     if (!interaction.replied && !interaction.deferred) {
       await interaction.reply({ 
         content: 'Une erreur est survenue lors du traitement de votre demande.', 
@@ -203,7 +189,7 @@ async function handleSelectMenu(interaction) {
   const customId = interaction.customId;
   const values = interaction.values;
 
-  let responses = userResponses.get(userId) || {};
+  const responses = userResponses.get(userId) || {};
   responses[customId] = values;
   userResponses.set(userId, responses);
 
@@ -216,9 +202,8 @@ async function handleButton(interaction) {
     const userId = interaction.user.id;
     const responses = userResponses.get(userId) || {};
 
-    // Création de l'embed pour l'affichage des résultats
     const embed = new EmbedBuilder()
-      .setColor('#e67e22') // Couleur orange
+      .setColor('#e67e22')
       .setTitle('📋 CANDIDATURE BURGERSHOT')
       .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true }))
       .setDescription(`Formulaire soumis par **${interaction.user.tag}**`)
@@ -237,23 +222,20 @@ async function handleButton(interaction) {
       .setTimestamp()
       .setImage('https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT0t6FefzJSQlrXbb2_pCMaPu19xSfKQ6bZcHgGIKdPqi7nxV97_CIazGxTUokbWQUyjgw&usqp=CAU');
 
-    // Envoi de l'embed dans le canal
     const channel = await interaction.client.channels.fetch(interaction.channel.id);
     if (channel) {
       await channel.send({ embeds: [embed] });
     }
 
-    // Mise à jour du message avec une confirmation
     await interaction.update({
       content: '✅ Votre candidature a été envoyée avec succès !',
-      components: [] // Supprimer les composants après la validation
+      components: []
     });
 
-    // Nettoyer les réponses utilisateur après envoi
     userResponses.delete(userId);
   }
 }
 
 // Connexion du bot
 bot.login(process.env.TOKEN)
-  .catch(error => console.error('Erreur de connexion:', error));
+  .catch(error => console.error('❌ Erreur de connexion:', error));
