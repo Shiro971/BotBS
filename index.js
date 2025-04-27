@@ -25,10 +25,8 @@ const bot = new Client({
 const userResponses = new Map();
 const GUILD_ID = '1076638219858346126';
 
-
 // Événement de connexion
 bot.once('ready', async () => {
-
   try {
     await bot.application.commands.set([]);
     console.log('Toutes les commandes globales ont été supprimées.');
@@ -77,7 +75,6 @@ async function registerCommands() {
     console.error('Erreur lors de l\'enregistrement des commandes:', error);
   }
 }
-
 
 // Gestion des interactions
 bot.on('interactionCreate', async interaction => {
