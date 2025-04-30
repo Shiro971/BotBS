@@ -66,7 +66,7 @@ async function handleQuestionnaireCommand(interaction) {
 
     const fields = [
       { id: 'agehrp', label: 'Âge HRP' },
-      { id: 'heures', label: 'Heures de jeu' },
+      { id: 'heures', label: 'Heures de jeu' , placeholder: '800 heures de jeu' },
       { id: 'nomrp', label: 'Nom RP complet' },
       { id: 'tel', label: 'Numéro de téléphone RP', placeholder: '555-XXX-XXX' },
       { id: 'idUnique', label: 'ID unique' }
