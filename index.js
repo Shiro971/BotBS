@@ -9,7 +9,7 @@ const {
   ButtonBuilder, 
   ButtonStyle, 
   InteractionType, 
-  EmbedBuilder,
+  EmbedBuilder, 
   InteractionResponseFlags 
 } = require('discord.js');
 require('dotenv').config();
@@ -33,11 +33,8 @@ bot.once('ready', async () => {
 async function registerCommands() {
   try {
     const guild = await bot.guilds.fetch(GUILD_ID);
-    await guild.commands.set([
-      {
-        name: "recrutement",
-        description: "Ouvrir le formulaire de recrutement"
-      }
+    await guild.commands.set([ 
+      { name: "recrutement", description: "Ouvrir le formulaire de recrutement" }
     ]);
     console.log('✅ Commande /recrutement enregistrée');
   } catch (error) {
@@ -96,8 +93,8 @@ async function handleModalSubmit(interaction) {
   if (interaction.customId !== 'recruitment_form') return;
 
   try {
-    // Répondre immédiatement
-    await interaction.deferReply({ flags: true });
+    // Répondre immédiatement pour ne pas laisser "réfléchit..." trop longtemps
+    await interaction.deferReply({ ephemeral: true });
 
     const responses = {
       agehrp: interaction.fields.getTextInputValue('agehrp') || 'Non précisé',
@@ -115,6 +112,7 @@ async function handleModalSubmit(interaction) {
       { label: 'Je sais pas', value: 'je sais pas' }
     ];
 
+    // Mise à jour du message pour ne pas laisser "réfléchit..." en attente
     await interaction.editReply({
       content: 'Merci pour vos réponses. Veuillez maintenant compléter les informations suivantes :',
       components: [
@@ -159,17 +157,14 @@ async function handleModalSubmit(interaction) {
             .setLabel('Valider')
             .setStyle(ButtonStyle.Success)
         )
-      ],
-      flags: InteractionResponseFlags.flags
+      ]
     });
   } catch (error) {
     console.error('❌ Erreur dans handleModalSubmit:', error);
-    if (interaction.isRepliable() && !interaction.replied) {
-      await interaction.reply({ 
-        content: 'Erreur lors du traitement', 
-        flags: InteractionResponseFlags.flags
-      }).catch(console.error);
-    }
+    await interaction.reply({
+      content: 'Erreur lors du traitement',
+      flags: InteractionResponseFlags.Ephemeral
+    }).catch(console.error);
   }
 }
 
@@ -177,17 +172,17 @@ async function handleSelectMenu(interaction) {
   try {
     const userId = interaction.user.id;
     const responses = userResponses.get(userId) || {};
-    
+
     // Stocke les valeurs sélectionnées
     responses[interaction.customId] = interaction.values;
     userResponses.set(userId, responses);
-    
+
     await interaction.deferUpdate();
   } catch (error) {
     console.error('❌ Erreur dans handleSelectMenu:', error);
     await interaction.reply({ 
       content: 'Erreur lors de la sauvegarde', 
-      flags: true 
+      flags: InteractionResponseFlags.Ephemeral // correction ici
     }).catch(console.error);
   }
 }
@@ -196,21 +191,24 @@ async function handleButton(interaction) {
   if (interaction.customId !== 'validate_form') return;
 
   try {
+    // Récupérer les réponses de l'utilisateur
     const userId = interaction.user.id;
     const responses = userResponses.get(userId);
-    
+
+    // Si aucune réponse trouvée, renvoyer un message d'erreur
     if (!responses) {
       return await interaction.reply({ 
-        content: 'Aucune donnée trouvée, veuillez recommencer', 
+        content: 'Aucune donnée trouvée, veuillez recommencer.', 
         flags: true 
       });
     }
 
     // Vérification des champs obligatoires
     const requiredFields = ['agehrp', 'heures', 'nomrp', 'contact', 'idUnique', 
-                          'disponibilites', 'permisb', 'casier', 'recense'];
+                            'disponibilites', 'permisb', 'casier', 'recense'];
     const missingFields = requiredFields.filter(field => !responses[field]);
 
+    // Si des champs manquent, renvoyer une alerte
     if (missingFields.length > 0) {
       return await interaction.reply({
         content: `Il manque des informations: ${missingFields.join(', ')}`,
@@ -218,7 +216,7 @@ async function handleButton(interaction) {
       });
     }
 
-    // Construction de l'embed
+    // Créer l'embed pour afficher les informations du formulaire
     const embed = new EmbedBuilder()
       .setColor('#e67e22')
       .setTitle('📋 CANDIDATURE BURGERSHOT')
@@ -238,23 +236,29 @@ async function handleButton(interaction) {
       .setFooter({ text: 'Formulaire de recrutement', iconURL: interaction.client.user.displayAvatarURL() })
       .setTimestamp();
 
-    // Envoi dans le canal
-    await interaction.channel.send({ embeds: [embed] });
-    
-    // Réponse à l'utilisateur
-    await interaction.reply({ 
-      content: '✅ Candidature envoyée avec succès !', 
-      flags: true 
+    // Répondre à l'utilisateur immédiatement pour supprimer le formulaire
+    await interaction.update({
+      content: 'Le formulaire a été validé, merci !',
+      components: [] // Enlève tous les composants (formulaire)
     });
 
-    // Nettoyage
+    // Attendre avant d'envoyer l'embed dans le canal
+    await interaction.channel.send({ embeds: [embed] });
+
+    // Répondre à l'utilisateur
+    await interaction.followUp({ 
+      content: '✅ Candidature envoyée avec succès !', 
+      ephemeral: true 
+    });
+
+    // Nettoyer les réponses de l'utilisateur après soumission
     userResponses.delete(userId);
   } catch (error) {
     console.error('❌ Erreur dans handleButton:', error);
     await interaction.reply({ 
-      content: 'Une erreur est survenue', 
+      content: 'Une erreur est survenue, veuillez réessayer.', 
       flags: true 
-    }).catch(console.error);
+    });
   }
 }
 
