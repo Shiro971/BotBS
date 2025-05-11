@@ -1,20 +1,11 @@
-const { 
-  Client, 
-  GatewayIntentBits, 
-  ModalBuilder, 
-  TextInputBuilder, 
-  TextInputStyle, 
-  ActionRowBuilder, 
-  StringSelectMenuBuilder, 
-  ButtonBuilder, 
-  ButtonStyle, 
-  InteractionType, 
-  EmbedBuilder, 
-  InteractionResponseFlags 
-} = require('discord.js');
+const { Client, GatewayIntentBits, InteractionType, MessageFlags } = require('discord.js');
 require('dotenv').config();
 
-const bot = new Client({ 
+const recruitmentHandler = require('./handlers/recruitmentHandler');
+const rdvHandler = require('./handlers/rdvHandler');
+const refHandler = require('./handlers/refHandler');
+
+const client = new Client({ 
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
@@ -22,245 +13,88 @@ const bot = new Client({
   ] 
 });
 
-const userResponses = new Map();
 const GUILD_ID = '1076638219858346126';
 
-bot.once('ready', async () => {
-  console.log(`🤖 Connecté en tant que ${bot.user.tag}`);
+client.once('ready', async () => {
+  console.log(`🤖 Connecté en tant que ${client.user.tag}`);
   await registerCommands();
 });
 
 async function registerCommands() {
   try {
-    const guild = await bot.guilds.fetch(GUILD_ID);
-    await guild.commands.set([ 
-      { name: "recrutement", description: "Ouvrir le formulaire de recrutement" }
+    const guild = await client.guilds.fetch(GUILD_ID);
+    await guild.commands.set([
+      { 
+        name: "recrutement", 
+        description: "Ouvrir le formulaire de recrutement" 
+      },
+      { 
+        name: "acc", 
+        description: "Permet de fixer un rendez-vous pour une formation" 
+      },
+      { 
+        name: "ref", 
+        description: "Permet de refuser une candidature" 
+      }
     ]);
-    console.log('✅ Commande /recrutement enregistrée');
+    console.log('✅ Commandes enregistrées');
   } catch (error) {
     console.error('❌ Erreur lors de l\'enregistrement:', error);
   }
 }
 
-bot.on('interactionCreate', async interaction => {
+client.on('interactionCreate', async interaction => {
   try {
-    if (interaction.isCommand() && interaction.commandName === "recrutement") {
-      await handleQuestionnaireCommand(interaction);
+    if (interaction.isCommand()) {
+      switch (interaction.commandName) {
+        case "recrutement":
+          console.log('✅ handleCommand called, ID:', interaction.id);
+          await recruitmentHandler.handleCommand(interaction);
+          break;
+        case "acc":
+          await rdvHandler.handleCommand(interaction);
+          break;
+        case "ref":
+          await refHandler.handleCommand(interaction);
+          break;
+      }
     } else if (interaction.type === InteractionType.ModalSubmit) {
-      await handleModalSubmit(interaction);
+      if (interaction.customId.startsWith('recrutement')) {
+        await recruitmentHandler.handleModalSubmit(interaction);
+      } else if (interaction.customId === 'modal_rdv') {
+        await rdvHandler.handleModalSubmit(interaction);
+      }
     } else if (interaction.isStringSelectMenu()) {
-      await handleSelectMenu(interaction);
+      await recruitmentHandler.handleSelectMenu(interaction);
     } else if (interaction.isButton()) {
-      await handleButton(interaction);
+      if (interaction.customId.startsWith('select_')) {
+        await rdvHandler.handleButtons(interaction);
+      } else if (interaction.customId === 'confirm_ref') {
+        await refHandler.handleButton(interaction);
+      } else if (interaction.customId === 'cancel_ref') {
+        await refHandler.handleButton(interaction);
+      }
     }
   } catch (error) {
-    console.error('❌ Erreur dans interactionCreate:', error);
+    console.error('❌ Erreur dans interactionCreate:', error.stack || error.message, 'Interaction ID:', interaction.id);
+    
+    try {
+      if (interaction.isCommand() && !interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          content: 'Une erreur est survenue lors du traitement de votre demande.',
+          flags: MessageFlags.Ephemeral
+        });
+      } else if (!interaction.replied && !interaction.deferred) {
+        await interaction.followUp({
+          content: 'Une erreur est survenue lors du traitement de votre demande.',
+          flags: MessageFlags.Ephemeral,
+          ephemeral: true
+        });
+      }
+    } catch (err) {
+      console.error('❌ Impossible d\'envoyer le message d\'erreur:', err);
+    }
   }
 });
 
-async function handleQuestionnaireCommand(interaction) {
-  try {
-    const modal = new ModalBuilder()
-      .setCustomId('recruitment_form')
-      .setTitle('Formulaire de Recrutement');
-
-    const fields = [
-      { id: 'agehrp', label: 'Âge HRP' },
-      { id: 'heures', label: 'Heures de jeu' , placeholder: '800 heures de jeu' },
-      { id: 'nomrp', label: 'Nom RP complet' },
-      { id: 'tel', label: 'Numéro de téléphone RP', placeholder: '555-XXX-XXX' },
-      { id: 'idUnique', label: 'ID unique' }
-    ];
-
-    fields.forEach(({ id, label, placeholder }) => {
-      const input = new TextInputBuilder()
-        .setCustomId(id)
-        .setLabel(label)
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true);
-
-      if (placeholder) input.setPlaceholder(placeholder);
-      modal.addComponents(new ActionRowBuilder().addComponents(input));
-    });
-
-    await interaction.showModal(modal);
-  } catch (error) {
-    console.error('❌ Erreur dans handleQuestionnaireCommand:', error);
-  }
-}
-
-async function handleModalSubmit(interaction) {
-  if (interaction.customId !== 'recruitment_form') return;
-
-  try {
-    // Répondre immédiatement pour ne pas laisser "réfléchit..." trop longtemps
-    await interaction.deferReply({ ephemeral: true });
-
-    const responses = {
-      agehrp: interaction.fields.getTextInputValue('agehrp') || 'Non précisé',
-      heures: interaction.fields.getTextInputValue('heures') || 'Non précisé',
-      nomrp: interaction.fields.getTextInputValue('nomrp') || 'Non précisé',
-      contact: interaction.fields.getTextInputValue('tel') || 'Non précisé',
-      idUnique: interaction.fields.getTextInputValue('idUnique') || 'Non précisé'
-    };
-
-    userResponses.set(interaction.user.id, responses);
-
-    const yesNoOptions = [
-      { label: 'Oui', value: 'oui' },
-      { label: 'Non', value: 'non' },
-      { label: 'Je sais pas', value: 'je sais pas' }
-    ];
-
-    // Mise à jour du message pour ne pas laisser "réfléchit..." en attente
-    await interaction.editReply({
-      content: 'Merci pour vos réponses. Veuillez maintenant compléter les informations suivantes :',
-      components: [
-        new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder()
-            .setCustomId('disponibilites')
-            .setPlaceholder('Sélectionnez vos disponibilités')
-            .setMinValues(1)
-            .setMaxValues(8)
-            .addOptions([
-              { label: '00h00 à 03h00', value: '00h00-03h00' },
-              { label: '03h00 à 06h00', value: '03h00-06h00' },
-              { label: '06h00 à 09h00', value: '06h00-09h00' },
-              { label: '09h00 à 11h00', value: '09h00-11h00' },
-              { label: '11h00 à 14h00', value: '11h00-14h00' },
-              { label: '14h00 à 17h00', value: '14h00-17h00' },
-              { label: '17h00 à 20h00', value: '17h00-20h00' },
-              { label: '20h00 à 23h00', value: '20h00-23h00' }
-            ])
-        ),
-        new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder()
-            .setCustomId('permisb')
-            .setPlaceholder('Permis B ?')
-            .addOptions(yesNoOptions)
-        ),
-        new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder()
-            .setCustomId('casier')
-            .setPlaceholder('Casier judiciaire ?')
-            .addOptions(yesNoOptions)
-        ),
-        new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder()
-            .setCustomId('recense')
-            .setPlaceholder('Recensé ?')
-            .addOptions(yesNoOptions)
-        ),
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId('validate_form')
-            .setLabel('Valider')
-            .setStyle(ButtonStyle.Success)
-        )
-      ]
-    });
-  } catch (error) {
-    console.error('❌ Erreur dans handleModalSubmit:', error);
-    await interaction.reply({
-      content: 'Erreur lors du traitement',
-      flags: InteractionResponseFlags.Ephemeral
-    }).catch(console.error);
-  }
-}
-
-async function handleSelectMenu(interaction) {
-  try {
-    const userId = interaction.user.id;
-    const responses = userResponses.get(userId) || {};
-
-    // Stocke les valeurs sélectionnées
-    responses[interaction.customId] = interaction.values;
-    userResponses.set(userId, responses);
-
-    await interaction.deferUpdate();
-  } catch (error) {
-    console.error('❌ Erreur dans handleSelectMenu:', error);
-    await interaction.reply({ 
-      content: 'Erreur lors de la sauvegarde', 
-      flags: InteractionResponseFlags.Ephemeral // correction ici
-    }).catch(console.error);
-  }
-}
-
-async function handleButton(interaction) {
-  if (interaction.customId !== 'validate_form') return;
-
-  try {
-    // Récupérer les réponses de l'utilisateur
-    const userId = interaction.user.id;
-    const responses = userResponses.get(userId);
-
-    // Si aucune réponse trouvée, renvoyer un message d'erreur
-    if (!responses) {
-      return await interaction.reply({ 
-        content: 'Aucune donnée trouvée, veuillez recommencer.', 
-        flags: true 
-      });
-    }
-
-    // Vérification des champs obligatoires
-    const requiredFields = ['agehrp', 'heures', 'nomrp', 'contact', 'idUnique', 
-                            'disponibilites', 'permisb', 'casier', 'recense'];
-    const missingFields = requiredFields.filter(field => !responses[field]);
-
-    // Si des champs manquent, renvoyer une alerte
-    if (missingFields.length > 0) {
-      return await interaction.reply({
-        content: `Il manque des informations: ${missingFields.join(', ')}`,
-        flags: true
-      });
-    }
-
-    // Créer l'embed pour afficher les informations du formulaire
-    const embed = new EmbedBuilder()
-      .setColor('#e67e22')
-      .setTitle('📋 CANDIDATURE BURGERSHOT')
-      .setThumbnail(interaction.user.displayAvatarURL())
-      .setDescription(`Formulaire soumis par ${interaction.user.tag}`)
-      .addFields(
-        { name: '👤 Âge HRP', value: responses.agehrp, inline: true },
-        { name: '⏳ Heures de jeu', value: responses.heures, inline: true },
-        { name: '🆔 ID unique', value: responses.idUnique, inline: true },
-        { name: '🧍 Nom RP', value: responses.nomrp, inline: false },
-        { name: '📞 Contact', value: responses.contact, inline: false },
-        { name: '🕒 Disponibilités', value: responses.disponibilites.join(', '), inline: false },
-        { name: '🚗 Permis B', value: responses.permisb[0], inline: true },
-        { name: '🚨 Casier', value: responses.casier[0], inline: true },
-        { name: '📋 Recensé', value: responses.recense[0], inline: true }
-      )
-      .setFooter({ text: 'Formulaire de recrutement', iconURL: interaction.client.user.displayAvatarURL() })
-      .setTimestamp();
-
-    // Répondre à l'utilisateur immédiatement pour supprimer le formulaire
-    await interaction.update({
-      content: 'Le formulaire a été validé, merci !',
-      components: [] // Enlève tous les composants (formulaire)
-    });
-
-    // Attendre avant d'envoyer l'embed dans le canal
-    await interaction.channel.send({ embeds: [embed] });
-
-    // Répondre à l'utilisateur
-    await interaction.followUp({ 
-      content: '✅ Candidature envoyée avec succès !', 
-      ephemeral: true 
-    });
-
-    // Nettoyer les réponses de l'utilisateur après soumission
-    userResponses.delete(userId);
-  } catch (error) {
-    console.error('❌ Erreur dans handleButton:', error);
-    await interaction.reply({ 
-      content: 'Une erreur est survenue, veuillez réessayer.', 
-      flags: true 
-    });
-  }
-}
-
-
-bot.login(process.env.TOKEN).catch(console.error);
+client.login(process.env.TOKEN).catch(console.error);
