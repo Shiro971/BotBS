@@ -1,20 +1,38 @@
 const { Client, GatewayIntentBits, InteractionType } = require('discord.js');
 require('dotenv').config();
+const fs = require('fs');
 
 const recruitmentHandler = require('./handlers/recruitmentHandler');
 const rdvHandler = require('./handlers/rdvHandler');
 const refHandler = require('./handlers/refHandler');
+const ticketOwners = require('./ticketOwners');
+
+const { majEmployesBurgerShot, messageCreate, suiviQuotas } = require('./handlers/tableHandler');
 
 const client = new Client({ 
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers // Ajouté pour mieux gérer les membres
+    GatewayIntentBits.GuildMembers 
   ] 
 });
 
 const GUILD_ID = '1076638219858346126';
+
+function sauvegarderQuotas() {
+  fs.writeFileSync('./quotas.json', JSON.stringify(Object.fromEntries(suiviQuotas), null, 2));
+}
+
+function chargerQuotas() {
+  if (fs.existsSync('./quotas.json')) {
+    const data = JSON.parse(fs.readFileSync('./quotas.json'));
+    for (const [key, value] of Object.entries(data)) {
+      suiviQuotas.set(key, value);
+    }
+  }
+}
+
 
 client.once('ready', async () => {
   console.log(`🤖 Connecté en tant que ${client.user.tag}`);
@@ -24,7 +42,53 @@ client.once('ready', async () => {
   } catch (error) {
     console.error('❌ Erreur lors de la préparation:', error);
   }
+  // Met à jour la liste des employés du Burger Shot
+  const guild = client.guilds.cache.get(GUILD_ID);
+  if (guild) {
+    await majEmployesBurgerShot(guild);
+    console.log('👥 Liste des employés mise à jour.');
+  }else {
+    console.error('❌ Impossible de récupérer le serveur');
+  }
+
+  chargerQuotas();
+  setInterval(sauvegarderQuotas, 10 * 60 * 1000);
+
 });
+
+client.on('messageCreate', async (message) => {
+    await messageCreate(message);
+
+    if (message.author.id === '557628352828014614') {
+        // Essaie de récupérer la vraie mention Discord
+        const mention = message.mentions.users.first();
+
+        if (mention && message.channel) {
+            ticketOwners.set(message.channel.id, mention.id);
+            console.log(`Ticket associé : ${message.channel.id} => ${mention.tag}`);
+        } else {
+            // Pas de vraie mention, essaie de parser le nom dans le message
+            const mentionMatch = message.content.match(/@([\w\s\.]+)/);
+            if (mentionMatch && message.guild) {
+                const username = mentionMatch[1].trim();
+                // Recherche dans les membres du serveur par displayName ou username
+                const member = message.guild.members.cache.find(m =>
+                    m.displayName === username || m.user.username === username
+                );
+                if (member) {
+                    ticketOwners.set(message.channel.id, member.id);
+                    console.log(`Ticket associé par parsing : ${message.channel.id} => ${member.user.tag}`);
+                } else {
+                    console.log(`Utilisateur non trouvé pour le nom : ${username}`);
+                }
+            } else {
+                console.log(`Aucune mention ou nom détecté dans le message : ${message.content}`);
+            }
+        }
+    }
+});
+
+
 
 async function registerCommands() {
   try {
