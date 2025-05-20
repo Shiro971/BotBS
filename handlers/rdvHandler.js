@@ -7,6 +7,7 @@ const {
   ButtonBuilder,
   ButtonStyle
 } = require('discord.js');
+const ticketOwners = require('../ticketOwners');
 
 module.exports = {
   handleCommand: async (interaction) => {
@@ -80,7 +81,34 @@ module.exports = {
         .setStyle(ButtonStyle.Success),
     );
 
-    await interaction.reply({ embeds: [embed], components: [row] });
+        // Récupérer l'ID du propriétaire du ticket
+        const ownerId = ticketOwners.get(interaction.channel.id);
+        if (!ownerId) {
+            console.error(`❌ Aucun propriétaire associé au channel ${interaction.channel.id}`);
+            return interaction.followUp({ content: '❌ Impossible de trouver le propriétaire du ticket.', ephemeral: true });
+        }
+
+        let user;
+        try {
+            user = await interaction.guild.members.fetch(ownerId);
+            console.log(`✅ Utilisateur récupéré: ${user.user.tag}`);
+        } catch (error) {
+            console.error('❌ Impossible de fetch l\'utilisateur:', error);
+            return interaction.followUp({ content: '❌ Impossible de récupérer l\'utilisateur.', ephemeral: true });
+        }
+
+        if (!ownerId) {
+          return interaction.reply({ content: '❌ Aucun propriétaire trouvé pour ce ticket.', ephemeral: true });
+        }
+
+      await interaction.channel.send({ content: `<@${user.id}>` });
+
+      await interaction.reply({ 
+        content: `<@${user.id}>`, 
+        embeds: [embed], 
+        components: [row] 
+      });
+
   },
 
   handleButtons: async (interaction) => {

@@ -1,4 +1,5 @@
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+const ticketOwners = require('../ticketOwners');
 
 module.exports = {
     handleCommand: async (interaction) => {
@@ -32,28 +33,75 @@ module.exports = {
         });
     },
 
-    handleButton: async (interaction) => {
-        if (interaction.customId === 'confirm_ref') {
-            // Message de refus automatique
-            const refusalMessage = `## Merci beaucoup pour l'intérêt que vous avez porté au Burger Shot 🍔\n\n` +
-                                 ` **Après une réflexion approfondie, __nous avons décidé de ne pas donner suite à votre candidature.__**\n` +
-                                 ` **Nous vous souhaitons beaucoup de succès dans vos projets futurs** 🙏 `;
+handleButton: async (interaction) => {
+    if (interaction.customId === 'confirm_ref') {
+        await interaction.update({
+            content: '✅ Message de refus en cours d\'envoi...',
+            components: [],
+            ephemeral: true
+        });
 
-            await interaction.update({
-                content: '✅ Message de refus envoyé avec succès',
-                components: [],
-                ephemeral: true
-            });
-
-            // Envoyer le message dans le channel (adaptez selon vos besoins)
-            await interaction.channel.send(refusalMessage);
-
-        } else if (interaction.customId === 'cancel_ref') {
-            await interaction.update({
-                content: '❌ Refus annulée',
-                components: [],
-                ephemeral: true
-            });
+        // Récupérer l'ID du propriétaire du ticket
+        const ownerId = ticketOwners.get(interaction.channel.id);
+        if (!ownerId) {
+            console.error(`❌ Aucun propriétaire associé au channel ${interaction.channel.id}`);
+            return interaction.followUp({ content: '❌ Impossible de trouver le propriétaire du ticket.', ephemeral: true });
         }
+        
+        // Tenter de fetch le membre
+        let user;
+        try {
+            user = await interaction.guild.members.fetch(ownerId);
+            console.log(`✅ Utilisateur récupéré: ${user.user.tag}`);
+        } catch (error) {
+            console.error('❌ Impossible de fetch l\'utilisateur:', error);
+            return interaction.followUp({ content: '❌ Impossible de récupérer l\'utilisateur.', ephemeral: true });
+        }
+
+        // Renommer le channel
+        try {
+            const channel = interaction.channel;
+            const newChannelName = `Candidature refusée ❌`
+            .toLowerCase()
+            .replace(/[^a-z0-9-\s]/g, '') // autorise espace \s
+            .replace(/\s+/g, '-') // remplace les espaces par des tirets
+            .substring(0, 32);            
+            await channel.setName(newChannelName);
+            console.log(`Channel name updated to: ${newChannelName}`);
+        } catch (error) {
+            console.error(`Failed to update channel name: ${error}`);
+            return interaction.followUp({ content: '⚠️ Erreur lors de la modification du nom du channel.', ephemeral: true });
+        }
+
+        // Construire et envoyer le message embed
+        const refusalEmbed = new EmbedBuilder()
+            .setColor(0xff0000)
+            .setTitle('Candidature refusée ❌')
+            .setDescription(`Merci beaucoup pour l'intérêt que vous avez porté au Burger Shot 🍔
+
+Après une réflexion approfondie, nous avons décidé de ne pas donner suite à votre candidature.
+Nous vous souhaitons beaucoup de succès dans vos projets futurs. 🙏
+
+Après avoir lu ce message, nous vous invitons à fermer votre ticket !
+
+Cordialement,
+L'équipe de recrutement du Burger Shot`);
+
+        await interaction.channel.send({ embeds: [refusalEmbed] });
+
+        // Mentionner le candidat à part
+        await interaction.channel.send({ content: `<@${user.id}>` });
+
+        console.log('Message de refus envoyé.');
+    } else if (interaction.customId === 'cancel_ref') {
+        await interaction.update({
+            content: '❌ Refus annulé',
+            components: [],
+            ephemeral: true
+        });
     }
+}
+
+
+
 };
